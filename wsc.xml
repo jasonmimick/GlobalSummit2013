@@ -1,0 +1,836 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (Apple Mac OS X for x86-64) 2013.1 (Build 414U)" ts="2013-04-09 10:29:20">
+<Routine name="wsc" type="INC" timestamp="62900,47930.082135"><![CDATA[
+#Define CredentialsUserPwd					"UserPassword"
+#Define CredentialsGoldenTicket			"IGottaGoldenTicket"
+
+#Define ServiceConfigGlb				^wsc.sc
+#Define ServiceAsyncArgGlb				^wsc.ws.asyncArgs
+#Define Log(%msg)						set ^wsc.log($i(^wsc.log))=$lb($ZTS,%msg)
+#Define LogStatus(%sc)					$$$Log(##class(%SYSTEM.Status).GetErrorText(%sc))
+
+#Define ServerSideErrorHandler(%code)	try { %code } catch (exception) { do ##class(wsc.ServerSideErrorHandler).handle(exception,$this) }
+
+]]></Routine>
+
+
+<Project name="wsc" LastModified="2013-03-19 13:17:50.179288">
+  <Items>
+    <ProjectItem name="wsc.INC" type="MAC"></ProjectItem>
+    <ProjectItem name="wsc.ServerSideErrorHandler" type="CLS"></ProjectItem>
+    <ProjectItem name="wsc.ServiceConfiguration" type="CLS"></ProjectItem>
+    <ProjectItem name="wsc.ServiceConnector" type="CLS"></ProjectItem>
+    <ProjectItem name="wsc.test.Harness" type="CLS"></ProjectItem>
+    <ProjectItem name="wsc.test.proxies.CalculatorSoap" type="CLS"></ProjectItem>
+    <ProjectItem name="wsc.test.services.Calculator" type="CLS"></ProjectItem>
+  </Items>
+</Project>
+
+
+<Class name="wsc.ServerSideErrorHandler">
+<Description>
+Sample web services server-side error handler</Description>
+<Final>1</Final>
+<IncludeCode>%soap,wsc</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeChanged>62900,47855.305247</TimeChanged>
+<TimeCreated>62900,47801.864442</TimeCreated>
+
+<Method name="handle">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>exception:%Exception.AbstractException,service:%SOAP.WebService</FormalSpec>
+<Implementation><![CDATA[
+	
+	set sc=exception.Log()
+	// Caché errors look like <SOME ERROR> which does not fit in XML nicely
+	// so escape the <>'s
+	set detail=##class(%CSP.Page).EscapeHTML(exception.DisplayString())
+	set errorInfo = "<error>"_detail_"</error>"
+	set soapFault = service.MakeFault($$$FAULTServer,"Calculator Error",errorInfo)
+	Do service.ReturnFault(soapFault)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="wsc.ServiceConfiguration">
+<Final>1</Final>
+<IncludeCode>wsc</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeChanged>62900,58066.72598</TimeChanged>
+<TimeCreated>62895,60328.57893</TimeCreated>
+
+<Method name="%OnNew">
+<FormalSpec>configName:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	set sc=$$$OK
+	set ..ConfigName = configName
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Property name="ConfigName">
+<Type>%String</Type>
+<Private>1</Private>
+</Property>
+
+<Property name="hostCounter">
+<Type>%Integer</Type>
+<InitialExpression>1</InitialExpression>
+<Private>1</Private>
+</Property>
+
+<Method name="HasMultipleHosts">
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[	return $listlength($$$ServiceConfigGlb(..ConfigName,"hosts"))>1
+]]></Implementation>
+</Method>
+
+<Method name="TryNextHost">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Merge sd=$$$ServiceConfigGlb(..ConfigName)
+	Set numHosts = $listlength(sd("hosts"))
+	if ( ..hostCounter >= numHosts ) {
+		return $$$ERROR("No more hosts to try. Already tried all "_numHosts_".")
+	}
+	Set ..hostCounter = ..hostCounter+1
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="setLocation">
+<Description>
+Look up the location of a given service</Description>
+<FormalSpec><![CDATA[Service:%String,&proxy:%SOAP.WebClient]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set proxyLoc = proxy.Location
+	Merge sd=$$$ServiceConfigGlb(..ConfigName)
+	// any ns mapping?
+	if ( $data(sd(Service,"ns-map")) ) {
+		set dns = $order(sd(Service,"ns-map",""))
+		set tns = sd(Service,"ns-map",dns)
+		if ( proxyLoc["/csp/"_dns_"/" ) {
+			set proxyLoc = $replace(proxyLoc,"/csp/"_dns_"/","/csp/"_tns_"/")
+		} else {
+			$$$Log("Can't do namespace mapping. "_dns_" not found in proxy location")
+		}
+	}
+	Set host = $listget(sd("hosts"),..hostCounter)
+	// insert the right host(:port) setting
+	if ( host'?1"http"0.1"s"1"://".E ) { // no protocol in host
+		set location=$p(proxyLoc,"://",1)_"://"_host_"/"_$piece(proxyLoc,"/",4,$length(proxyLoc,"/"))
+	} else {
+		set location=host_"/"_$piece(proxyLoc,"/",4,$length(proxyLoc,"/"))
+	}
+	set proxy.Location = location
+	w "location:",proxy.Location,!
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="setProperties">
+<FormalSpec><![CDATA[Service:%String,&Proxy]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	Merge sd=$$$ServiceConfigGlb(..ConfigName,Service)
+	set param=$order(sd("p",""))
+	while ( param'="" ) {
+		set value=sd("p",param)
+		set $property(Proxy,param)=value
+		set param = $order(sd("p",param))
+	}
+	
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="decorate">
+<FormalSpec><![CDATA[Service:%String,&proxy:%SOAP.WebClient]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//break
+	if '$data($$$ServiceConfigGlb(..ConfigName,Service) ) {
+		return $$$ERROR("No configuration found for service '"_Service_"'")
+	}
+	// fetch location
+	set sc = ..setLocation(Service,.proxy)
+	// decorate proxy with property settings
+	set sc = ..setProperties(Service,.proxy)
+	return sc
+]]></Implementation>
+</Method>
+
+<Property name="data">
+<Type>%String</Type>
+<MultiDimensional>1</MultiDimensional>
+</Property>
+
+<Method name="SetProperty">
+<FormalSpec>Service:%String,Property:%String,Value:%String</FormalSpec>
+<Implementation><![CDATA[	s ..data(Service,"p",Property)=Value
+]]></Implementation>
+</Method>
+
+<Method name="MapNamespace">
+<FormalSpec>Service:%String,DefaultNS:%String,TargetNS:%String</FormalSpec>
+<Implementation><![CDATA[	s ..data(Service,"ns-map",DefaultNS)=TargetNS
+]]></Implementation>
+</Method>
+
+<Method name="AddService">
+<FormalSpec>LogicalServiceName:%String,ServiceProxyClassName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	set ..data(LogicalServiceName,"proxyCN")=ServiceProxyClassName
+	
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="SetHosts">
+<FormalSpec>Hosts:%List</FormalSpec>
+<Implementation><![CDATA[	set ..data("hosts")=Hosts
+]]></Implementation>
+</Method>
+
+<Method name="getServiceProxyClassName">
+<FormalSpec>Service:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	
+	if ( '$data($$$ServiceConfigGlb(..ConfigName,Service) )) {
+		throw ##class(%Exception.General).%New("wsc","NO_SERVICE_FOUND",,"Unable to locate service with name='"_Service_"' in configuration='"_..ConfigName_"'")
+	}
+	merge d=$$$ServiceConfigGlb(..ConfigName,Service)
+	return d("proxyCN")
+]]></Implementation>
+</Method>
+
+<Method name="Save">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	merge $$$ServiceConfigGlb(..ConfigName)=..data
+]]></Implementation>
+</Method>
+
+<Method name="DropConfig">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ConfigName:%String</FormalSpec>
+<Implementation><![CDATA[	kill $$$ServiceConfigGlb(ConfigName)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="wsc.ServiceConnector">
+<Final>1</Final>
+<IncludeCode>wsc</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeChanged>62920,82262.521953</TimeChanged>
+<TimeCreated>62895,58737.463652</TimeCreated>
+
+<Property name="ServiceConfiguration">
+<Type>%String</Type>
+</Property>
+
+<Parameter name="LOGERRORS">
+<Description>
+Could also read switch from central config...</Description>
+<Default>1</Default>
+</Parameter>
+
+<Parameter name="ASYNCJOBWAIT">
+<Description>
+How long should async calls wait to spawn background job
+perhaps for certain scenarios you might want to tweak this</Description>
+<Default>-1</Default>
+</Parameter>
+
+<Method name="%OnNew">
+<FormalSpec>configName:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	set sc=$$$OK
+	set ..ServiceConfiguration = configName
+	return $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="setCredentials">
+<FormalSpec>CredentialType:wsc.Credentials,Arguments...:%String</FormalSpec>
+<Implementation><![CDATA[
+	set ..credentials("type")=CredentialType
+	for i=1:1:Arguments {
+		set ..credentials("args",$i(..credentials("args")))=Arguments(i)
+	}
+]]></Implementation>
+</Method>
+
+<Property name="credentials">
+<Type>%String</Type>
+<MultiDimensional>1</MultiDimensional>
+<Private>1</Private>
+</Property>
+
+<Property name="callback">
+<Type>%String</Type>
+<Private>1</Private>
+</Property>
+
+<Property name="cbticket">
+<Type>%Integer</Type>
+<Private>1</Private>
+</Property>
+
+<Method name="InvokeAsync">
+<Description>
+Invoke a service method asynchronously
+Syntax for callback is Classname:ClassMethod</Description>
+<Final>1</Final>
+<FormalSpec>CallbackClassMethod:%String,Service:%String,MethodName:%String,Arguments...</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set ticket=$i($$$ServiceAsyncArgGlb)
+	Merge $$$ServiceAsyncArgGlb(ticket)=Arguments
+	Job ##class(wsc.ServiceConnector).iInvokeAsync(..ServiceConfiguration,CallbackClassMethod,ticket,Service,MethodName)::..#ASYNCJOBWAIT  
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="iInvokeAsync">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>sConfig:%String,cb:%String,ticket:%String,Service:%String,MethodName:%String</FormalSpec>
+<Implementation><![CDATA[
+	#dim exception As %Exception.SystemException
+	try{
+		Set scon=##class(wsc.ServiceConnector).%New(sConfig)
+		Set scon.callback=cb
+		set scon.cbticket=ticket
+		set sc= scon.Invoke(Service,MethodName,0,0)
+	} catch(exception) {
+		$$$Log(exception.DisplayString())
+		if ( ..#LOGERRORS ) {
+			set sc=exception.Log()
+			if ( $$$ISERR(sc) ) { $$$LogStatus(sc) }
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="Invoke">
+<Final>1</Final>
+<FormalSpec>Service:%String,MethodName:%String,*Response,Arguments...</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim exception As %Exception.SystemException
+	Set sc=$$$OK
+	
+	set config=##class(ServiceConfiguration).%New(..ServiceConfiguration)
+	return ..iInvoke(config,Service,MethodName,.Response,Arguments...)
+]]></Implementation>
+</Method>
+
+<Method name="iInvoke">
+<Final>1</Final>
+<FormalSpec>config:wsc.ServiceConfiguration,Service:%String,MethodName:%String,*Response,Arguments...</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set proxyCN = config.getServiceProxyClassName(Service)
+	Set proxy=$classmethod(proxyCN,"%New")
+	if ( '$isobject(proxy) ) {
+		throw %objlasterror
+	}
+	
+	set sc= config.decorate(Service,.proxy)
+	
+	throw:$$$ISERR(sc) sc
+	
+	if ( $data(..credentials) ) {
+		if ( ..credentials("type")=$$$CredentialsUserPwd ) {
+			set user=..credentials("args",1)
+			set pwd=..credentials("args",2)
+			Set userToken = ##class(%SOAP.Security.UsernameToken).Create(user,pwd)
+			Do proxy.SecurityOut.AddToken(userToken)
+			Set timeStamp = ##class(%SOAP.Security.Timestamp).Create()
+			Do proxy.SecurityOut.AddToken(timeStamp)
+		}
+	}
+	try {
+		if ( ..callback'=""  ) {  // async call here
+			Merge Arguments = $$$ServiceAsyncArgGlb(..cbticket)
+		}
+		set Response=$method(proxy,MethodName,Arguments...)
+		if ( ..callback '= "" ) {
+			Set class=$p(..callback,":",1)
+			Set method=$p(..callback,":",2)
+			do $classmethod(class,method,.Response)
+			set ..callback=""
+		}
+			
+	} catch (exception) {
+		if ..#LOGERRORS $$$Log(exception.DisplayString())
+		// If we have alternative hosts, then try again.
+		if ( config.HasMultipleHosts() ) {
+			
+			Set sc=config.TryNextHost()
+			If ( $$$ISERR(sc) ) {
+				$$$LogStatus(sc)
+				throw exception // $system.Status.AppendStatus(sc,exception.AsStatus())
+			} Else {
+				return ..iInvoke(config,Service,MethodName,.Response,Arguments...)
+			}
+		}
+		throw exception
+	}
+	return sc
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="wsc.test.Harness">
+<IncludeCode>wsc</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeChanged>62920,82349.681469</TimeChanged>
+<TimeCreated>62895,60606.878586</TimeCreated>
+
+<Parameter name="AsyncEvent">
+<Description>
+Defines a resource name for an event
+which the testing code waits on to validate that
+async service calls complete. 
+Note: These resource names must be valid global identifiers.</Description>
+<Default>^||wsc.test.Harness.Async</Default>
+</Parameter>
+
+<Method name="setup">
+<Description>
+Creates some service configurations which map services
+to servers hosting them. Also sets up security prameters.
+If following this pattern in a real-world application, one
+would likly build an administration user experience which
+manages this sort of thing. In HealthShare this is the "Service Registry".</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	try {
+		Do ##class(wsc.ServiceConfiguration).DropConfig("wsc-test-config")
+		Do ##class(wsc.ServiceConfiguration).DropConfig("wsc-test-config-ssl")
+		Set config = ##class(wsc.ServiceConfiguration).%New("wsc-test-config")
+		
+		// register the Calculator service - to run on localhost
+		// note, you can register a service on more than one named
+		// host - this is a fall back...
+		Do config.AddService("MyCalc" /* logical name for service*/,
+						     "wsc.test.proxies.CalculatorSoap")
+		Do config.SetHosts($lb("localhost:57775"))
+		Do config.Save()
+		
+		Set sslConfig = ##class(wsc.ServiceConfiguration).%New("wsc-test-config-ssl")
+		
+		// register the Calculator service - to run on localhost
+		// note, you can register a service on more than one named
+		// host - this is a fall back...
+		Do sslConfig.AddService("MyCalc" /* logical name for service*/,
+							    "wsc.test.proxies.CalculatorSoap")
+		Do sslConfig.SetProperty("MyCalc","SSLConfiguration","phase-dance-client")
+		Do sslConfig.MapNamespace("MyCalc","user","samples")
+		/* server.com should fail - it's made up */
+		Do sslConfig.SetHosts($lb("server.com","https://ec2-184-73-42-189.compute-1.amazonaws.com"))
+		Do sslConfig.Save()
+	} catch (Exception) {
+		Do Exception.OutputToDevice()
+		Do $system.OBJ.DisplayError()
+	}
+]]></Implementation>
+</Method>
+
+<Method name="driver">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Do ..failNoConfigError()
+	Do ..setup()
+	Do ..test1()
+	Do ..test2()
+]]></Implementation>
+</Method>
+
+<Method name="failNoConfigError">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	try {
+		// Create a connector, telling the constructor
+		// which configuration to use
+		Set connector = ##class(wsc.ServiceConnector).%New("wsc-test-config")
+		
+		Set sc = connector.Invoke("FooBar","Add",.twoPlusTwo,2,2)
+		
+	} catch (Exception) {
+		Do Exception.OutputToDevice()
+		Do $system.OBJ.DisplayError()
+	}
+]]></Implementation>
+</Method>
+
+<Method name="test1">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	try {
+		// Create a connector, telling the constructor
+		// which configuration to use
+		Write "Using config:wsc-test-config",!
+		Set connector = ##class(wsc.ServiceConnector).%New("wsc-test-config")
+		
+		Set sc = connector.Invoke("MyCalc","Add",.twoPlusTwo,2,2)
+		w "MyCalc.Add(2,2)=",twoPlusTwo,!
+		
+		Do connector.Invoke("MyCalc","Divide",.divide,55,0)
+	} catch (Exception) {
+		Do Exception.OutputToDevice()
+		Do $system.OBJ.DisplayError()
+	}
+]]></Implementation>
+</Method>
+
+<Method name="test2">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	try {
+		
+		Write !,"Using config:wsc-test-config-ssl",!
+		
+		// Create a connector by specifing which configuration to use
+		Set connector = ##class(wsc.ServiceConnector).%New("wsc-test-config-ssl")
+		
+		// Set user/pass since this config expects it
+		do connector.setCredentials($$$CredentialsUserPwd,"_system","SYS")
+		
+		Set sc = connector.Invoke("MyCalc","Add",.twoPlusTwo,2,2)
+		w "MyCalc.Add(2,2)=",twoPlusTwo,!
+		
+		// create some event's to wait on
+		set eventName=..#AsyncEvent
+		
+		set eventCreated = $system.Event.Create(eventName)
+		w "event "_..#AsyncEvent_" created=",eventCreated,!
+		// Call some services asynchronously
+		Set sc = connector.InvokeAsync("wsc.test.Harness:AsyncResults","MyCalc","Add",1973,2369)
+		Do connector.InvokeAsync("wsc.test.Harness:CallbackWithError","MyCalc","Multiply",55,66)
+		
+		// wait on event notification to prove that the async callbacks occured.
+		set gotCall1 = 0, gotCall2 = 0
+		
+		while ( 'gotCall1 || 'gotCall2 ) {
+			set event=$system.Event.WaitMsg(..#AsyncEvent)
+			if ( $listget(event,2)="Call 1" ) {
+				set gotCall1 = 1
+				write "Call 1 complete",!
+			}
+			if ( $list(event,2) = "Call 2") {
+				set gotCall2 = 1
+				write "Call 2 complete",!
+			}
+			// or just pass the name of the variable in the message
+			// set @$listget(event,2)=1
+		}
+		
+		// clean up event
+		set eventDeleted = $system.Event.Delete(eventName)
+	} catch (Exception) {
+		Do Exception.OutputToDevice()
+		Do $system.OBJ.DisplayError()
+		// clean up event
+		set eventDeleted = $system.Event.Delete(eventName)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="AsyncResults">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&Result]]></FormalSpec>
+<Implementation><![CDATA[
+	set ^wsc.test.asycResult($i(^wsc.test.asycResult))=Result
+	do $system.Event.Signal(..#AsyncEvent,"Call 1")
+]]></Implementation>
+</Method>
+
+<Method name="CallbackWithError">
+<Description>
+This should log an error!</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&Result]]></FormalSpec>
+<Implementation><![CDATA[
+	do $system.Event.Signal(..#AsyncEvent,"Call 2")
+	throw ##class(%Exception.General).%New("Callback exception",1235813,"CallbackWithError","Result="_Result)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="wsc.test.proxies.CalculatorSoap">
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.WebClient</Super>
+<TimeChanged>62900,33552.430942</TimeChanged>
+<TimeCreated>62896,40354.52784</TimeCreated>
+
+<Parameter name="LOCATION">
+<Description>
+This is the URL used to access the web service.</Description>
+<Default>http://localhost:57775/csp/user/wsc.test.services.Calculator.cls</Default>
+</Parameter>
+
+<Parameter name="NAMESPACE">
+<Description>
+This is the namespace used by the Service</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="OUTPUTTYPEATTRIBUTE">
+<Description>
+Use xsi:type attribute for literal types.</Description>
+<Default>1</Default>
+</Parameter>
+
+<Parameter name="SECURITYIN">
+<Description>
+Determines handling of Security header.</Description>
+<Default>ALLOW</Default>
+</Parameter>
+
+<Parameter name="SERVICENAME">
+<Description>
+This is the name of the Service</Description>
+<Default>Calculator</Default>
+</Parameter>
+
+<Parameter name="SOAPVERSION">
+<Description>
+This is the SOAP version supported by the service.</Description>
+<Default>1.1</Default>
+</Parameter>
+
+<Method name="DoService">
+<Final>1</Final>
+<FormalSpec>Service:%String,x:%Integer,y:%Integer</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("DoService").Invoke($this,"http://tempuri.org/wsc.test.services.Calculator.DoService",Service,.x,.y)
+]]></Implementation>
+</Method>
+
+<Method name="Add">
+<Final>1</Final>
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("Add").Invoke($this,"http://tempuri.org/wsc.test.services.Calculator.Add",.x,.y)
+]]></Implementation>
+</Method>
+
+<Method name="Divide">
+<Final>1</Final>
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%Numeric</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("Divide").Invoke($this,"http://tempuri.org/wsc.test.services.Calculator.Divide",.x,.y)
+]]></Implementation>
+</Method>
+
+<Method name="Multiply">
+<Final>1</Final>
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("Multiply").Invoke($this,"http://tempuri.org/wsc.test.services.Calculator.Multiply",.x,.y)
+]]></Implementation>
+</Method>
+
+<Method name="Subtract">
+<Final>1</Final>
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("Subtract").Invoke($this,"http://tempuri.org/wsc.test.services.Calculator.Subtract",.x,.y)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="wsc.test.services.Calculator">
+<Description>
+Sample service to test wsc</Description>
+<IncludeCode>%soap,wsc</IncludeCode>
+<Super>%SOAP.WebService</Super>
+<TimeChanged>62920,82025.622475</TimeChanged>
+<TimeCreated>62895,60928.06024</TimeCreated>
+
+<Parameter name="SERVICENAME">
+<Default>Calculator</Default>
+</Parameter>
+
+<Parameter name="LOGERRORS">
+<Default>0</Default>
+</Parameter>
+
+<Method name="DoService">
+<Description>
+Example of server-side exception handling pattern.
+All clients invoke services through this facade, which will
+delegate to the appropriate method trapping any errors
+and optionally logging to the Caché system log.</Description>
+<FormalSpec>Service:%String,x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	#dim exception as %Exception.SystemException
+	try {
+		Set result=$method($this,Service,x,y)
+	} catch(exception) {
+		if (..#LOGERRORS) {
+			set sc=exception.Log()
+		}
+		// Caché errors look like <SOME ERROR> which does not fit in XML nicely
+		// so escape the <>'s
+		set detail=##class(%CSP.Page).EscapeHTML(exception.DisplayString())
+		set errorInfo = "<error>"_detail_"</error>"
+		set soapFault = ..MakeFault($$$FAULTServer,"Calculator Error",errorInfo)
+		Do ..ReturnFault(soapFault)
+	}
+	Return result
+]]></Implementation>
+</Method>
+
+<Method name="ssehAdd">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	$$$ServerSideErrorHandler(return x+y)
+]]></Implementation>
+</Method>
+
+<Method name="ssehDivide">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	$$$ServerSideErrorHandler(return x/y)
+]]></Implementation>
+</Method>
+
+<Method name="Add">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	Return x+y
+]]></Implementation>
+</Method>
+
+<Method name="Subtract">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	return x-y
+]]></Implementation>
+</Method>
+
+<Method name="Divide">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Decimal</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	// Note how Caché will catch the divide by zero error for you.
+	return x/y
+]]></Implementation>
+</Method>
+
+<Method name="Multiply">
+<FormalSpec>x:%Integer,y:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	return x*y
+]]></Implementation>
+</Method>
+
+<Method name="FindPerson">
+<Description>
+Example of error handling strategy - 
+All public service methods wrap call to internal implementation
+with macro which inserts try/catch mechanism to central error
+handler code</Description>
+<FormalSpec>Query:%String</FormalSpec>
+<ReturnType>Sample.Person</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	$$$ServerSideErrorHandler(return ..internalFindPerson(Query))
+]]></Implementation>
+</Method>
+
+<Method name="internalFindPerson">
+<Description>
+Example internal implementation which returns a real object
+Note: Service implementations should always 'throw' exceptions
+since the central error handler will deal with them.
+Note #2: You can't just throw %Status's - see the macro $$$ThrowStatus()
+which takes a %Status and makes it an %Exception</Description>
+<FormalSpec>Query:%String</FormalSpec>
+<Private>1</Private>
+<ReturnType>Sample.Person</ReturnType>
+<Implementation><![CDATA[
+	if ( Query ? .N ) { // id lookup
+		set person=##class(Sample.Person).%OpenId(Query)
+		if ( '$isobject(person) ) {
+			$$$ThrowStatus($$$ERROR($$$GeneralError,"Unable to find person with id='"_Query_"'"))
+		}
+		return person
+	} 
+	
+	// try to do lookup
+	&sql(select %ID into :id from Sample.Person where Name %STARTSWITH :Query)
+	if ( SQLCODE = 0 ) {
+		set person=##class(Sample.Person).%OpenId(id)
+		return person
+	}
+	$$$ThrowStatus( $$$ERROR($$$GeneralError,"Unable to process query='"_Query_"'") )
+]]></Implementation>
+</Method>
+
+<Method name="people">
+<FormalSpec>*dataSet:%XML.DataSet</FormalSpec>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	//#dim dataSet as %XML.DataSet
+	set dataSet = ##class(%XML.DataSet).%New("%DynamicQuery:SQL")
+	set sc=dataSet.Prepare("select * from Sample.Person")
+	if ( $$$ISERR(sc) ) {
+		$$$ThrowStatus(sc)
+	}
+]]></Implementation>
+</Method>
+</Class>
+</Export>
