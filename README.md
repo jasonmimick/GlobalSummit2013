@@ -17,9 +17,11 @@ SecuringWebServices.pptx
 ------------------------
 Slide deck form Securing Web Services session
 
-SecuringWebServices Session
----------------------------
-SecuringWebServicesService.xml  Caché project with server-side service
-SecuringWebServicesConsumer.xml Caché project with client-side consumer 
-                                and test code.
+SecuringWebServicesService.xml
+------------------------------
+Caché project with server-side service from Securing Web Services session.
+
+SecuringWebServicesConsumer.xml
+-------------------------------
+Caché project with client-side consumer and test code form Securing Web Services session.
 
