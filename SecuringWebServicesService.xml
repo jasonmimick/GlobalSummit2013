@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (SUSE Linux Enterprise Server for x86-64) 2013.1 (Build 398U)" ts="2013-04-10 15:03:21">
+<Class name="GlobalSummit.MyService">
+<Description>
+GlobalSummit.MyService</Description>
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.WebService</Super>
+<TimeChanged>62922,49386.922051</TimeChanged>
+<TimeCreated>62922,49386.922051</TimeCreated>
+
+<Parameter name="SERVICENAME">
+<Description>
+Name of the WebService.</Description>
+<Default>MyService</Default>
+</Parameter>
+
+<Parameter name="NAMESPACE">
+<Description>
+TODO: change this to actual SOAP namespace.
+SOAP Namespace for the WebService</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="USECLASSNAMESPACES">
+<Description>
+Namespaces of referenced classes will be used in the WSDL.</Description>
+<Default>1</Default>
+</Parameter>
+
+<Method name="Test">
+<Description>
+TODO: add arguments and implementation.
+Test</Description>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[	Quit "Test"
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="GlobalSummit.MyServiceConfig">
+<Description>
+GlobalSummit.MyServiceConfig
+Configuration class for GlobalSummit.MyService</Description>
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.Configuration</Super>
+<TimeChanged>62922,49913.906209</TimeChanged>
+<TimeCreated>62922,49913.906209</TimeCreated>
+
+<XData name="service">
+<Data><![CDATA[
+<cfg:configuration xmlns:cfg="http://www.intersystems.com/configuration" xmlns:sp="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702" xmlns:wsap="http://www.w3.org/2006/05/addressing/wsdl" xmlns:wsp="http://www.w3.org/ns/ws-policy" name="service">
+  <cfg:service classname="GlobalSummit.MyService">
+    <wsp:Policy>
+      <sp:TransportBinding>
+        <wsp:Policy>
+          <sp:TransportToken>
+            <wsp:Policy>
+              <sp:HttpsToken>
+                <wsp:Policy/>
+              </sp:HttpsToken>
+            </wsp:Policy>
+          </sp:TransportToken>
+          <sp:AlgorithmSuite>
+            <wsp:Policy>
+              <sp:Basic128/>
+            </wsp:Policy>
+          </sp:AlgorithmSuite>
+          <sp:Layout>
+            <wsp:Policy>
+              <sp:Strict/>
+            </wsp:Policy>
+          </sp:Layout>
+          <sp:IncludeTimestamp/>
+        </wsp:Policy>
+      </sp:TransportBinding>
+      <sp:SignedSupportingTokens>
+        <wsp:Policy>
+          <sp:UsernameToken sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/AlwaysToRecipient">
+            <wsp:Policy>
+              <sp:WssUsernameToken11/>
+            </wsp:Policy>
+          </sp:UsernameToken>
+        </wsp:Policy>
+      </sp:SignedSupportingTokens>
+      <wsap:UsingAddressing/>
+    </wsp:Policy>
+  </cfg:service>
+</cfg:configuration>
+]]></Data>
+</XData>
+</Class>
+
+
+<Project name="SecuringWebServicesService" LastModified="2013-04-10 15:02:31.032188">
+  <Items>
+    <ProjectItem name="GlobalSummit.MyService" type="CLS"></ProjectItem>
+    <ProjectItem name="GlobalSummit.MyServiceConfig" type="CLS"></ProjectItem>
+  </Items>
+</Project>
+</Export>

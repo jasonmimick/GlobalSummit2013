@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (Apple Mac OS X for x86-64) 2013.1 (Build 414U)" ts="2013-04-10 10:52:54">
+<Routine name="GlobalS" type="MAC" languagemode="0" timestamp="62922,39148.17481"><![CDATA[
+test
+	set ^ISCSOAP("Log")="sio"
+	set ^ISCSOAP("LogFile")="GlobalS-soap.log"
+	try {
+		set proxy=##class(GlobalS.MyServiceSoap).%New()
+		set proxy.SSLConfiguration="phase-dance-client"
+		set token=##class(%SOAP.Security.UsernameToken).Create("_system","SYS")
+		do proxy.SecurityOut.AddToken(token)
+		set result=proxy.Test()
+		write "result=",result,!
+	} catch (ex) {
+		do ex.OutputToDevice()
+	}
+]]></Routine>
+
+
+<Class name="GlobalS.MyServiceSoap">
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.WebClient</Super>
+<TimeChanged>62922,35582.887803</TimeChanged>
+<TimeCreated>62922,35582.885941</TimeCreated>
+
+<Method name="Test">
+<Final>1</Final>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<SoapBindingStyle>document</SoapBindingStyle>
+<SoapBodyUse>literal</SoapBodyUse>
+<Implementation><![CDATA[ Quit ..WebMethod("Test").Invoke($this,"http://tempuri.org/GlobalSummit.MyService.Test")
+]]></Implementation>
+</Method>
+
+<Parameter name="LOCATION">
+<Description>
+This is the URL used to access the web service.</Description>
+<Default>https://ec2-184-73-42-189.compute-1.amazonaws.com:443/csp/user/GlobalSummit.MyService.cls</Default>
+</Parameter>
+
+<Parameter name="NAMESPACE">
+<Description>
+This is the namespace used by the Service</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="OUTPUTTYPEATTRIBUTE">
+<Description>
+Use xsi:type attribute for literal types.</Description>
+<Default>1</Default>
+</Parameter>
+
+<Parameter name="SECURITYIN">
+<Description>
+Determines handling of Security header.</Description>
+<Default>ALLOW</Default>
+</Parameter>
+
+<Parameter name="SERVICENAME">
+<Description>
+This is the name of the Service</Description>
+<Default>MyService</Default>
+</Parameter>
+
+<Parameter name="SOAPVERSION">
+<Description>
+This is the SOAP version supported by the service.</Description>
+<Default>1.1</Default>
+</Parameter>
+</Class>
+
+
+<Class name="GlobalS.MyServiceSoapConfig">
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.Configuration</Super>
+<TimeChanged>62922,35582.8932</TimeChanged>
+<TimeCreated>62922,35582.889518</TimeCreated>
+
+<Parameter name="REPORTANYERROR">
+<Description>
+Ignore any alternatives in Policy that are not understood.</Description>
+<Default>0</Default>
+</Parameter>
+
+<XData name="service">
+<Data><![CDATA[
+<cfg:configuration xmlns:cfg="http://www.intersystems.com/configuration" name="service">
+  <cfg:service classname="GlobalS.MyServiceSoap">
+    <wsp:Policy xmlns:wsp="http://www.w3.org/ns/ws-policy" cfg:wsdlElement="binding">
+      <sp:TransportBinding xmlns:sp="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702">
+        <wsp:Policy>
+          <sp:TransportToken>
+            <wsp:Policy>
+              <sp:HttpsToken>
+                <wsp:Policy/>
+              </sp:HttpsToken>
+            </wsp:Policy>
+          </sp:TransportToken>
+          <sp:AlgorithmSuite>
+            <wsp:Policy>
+              <sp:Basic128/>
+            </wsp:Policy>
+          </sp:AlgorithmSuite>
+          <sp:Layout>
+            <wsp:Policy>
+              <sp:Strict/>
+            </wsp:Policy>
+          </sp:Layout>
+          <sp:IncludeTimestamp/>
+        </wsp:Policy>
+      </sp:TransportBinding>
+      <sp:SignedSupportingTokens xmlns:sp="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702">
+        <wsp:Policy>
+          <sp:UsernameToken sp:IncludeToken="http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702/IncludeToken/AlwaysToRecipient">
+            <wsp:Policy>
+              <sp:WssUsernameToken11/>
+            </wsp:Policy>
+          </sp:UsernameToken>
+        </wsp:Policy>
+      </sp:SignedSupportingTokens>
+      <wsap:UsingAddressing xmlns:wsap="http://www.w3.org/2006/05/addressing/wsdl"/>
+    </wsp:Policy>
+    <cfg:method name="Test"/>
+  </cfg:service>
+</cfg:configuration>
+]]></Data>
+</XData>
+</Class>
+
+
+<Project name="SecuringWebServicesConsumer" LastModified="2013-04-10 10:52:16.892825">
+  <Items>
+    <ProjectItem name="GlobalS.MyServiceSoap" type="CLS"></ProjectItem>
+    <ProjectItem name="GlobalS.MyServiceSoapConfig" type="CLS"></ProjectItem>
+    <ProjectItem name="GlobalS.MAC" type="MAC"></ProjectItem>
+  </Items>
+</Project>
+</Export>
